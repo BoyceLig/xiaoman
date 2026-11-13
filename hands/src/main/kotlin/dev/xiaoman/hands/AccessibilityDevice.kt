@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.graphics.Path
 import android.hardware.display.DisplayManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.DisplayMetrics
@@ -44,6 +45,8 @@ class ServiceNotConnectedException : IllegalStateException(AccessibilityDevice.N
  * @param maxNodes cap of the compact node list.
  * @param settleDelayMs pause after every action so the UI can react before the next observation.
  * @param overlay when set, it is hidden during screenshots and dispatched touch gestures.
+ * @param projectionCapture Android 10 (API < 30) screen capture via MediaProjection; without it
+ * screenshots are skipped there and observations carry only the node tree.
  */
 class AccessibilityDevice(
     private val serviceProvider: () -> XiaomanAccessibilityService?,
@@ -51,6 +54,7 @@ class AccessibilityDevice(
     private val maxNodes: Int = NodeCompactor.DEFAULT_MAX_NODES,
     private val settleDelayMs: Long = 600,
     var overlay: StatusOverlay? = null,
+    private val projectionCapture: ProjectionCapture? = null,
 ) : Device {
 
     private val appContext: Context = context.applicationContext ?: context
@@ -89,6 +93,13 @@ class AccessibilityDevice(
     private class Shot(val png: ByteArray?, val secure: Boolean)
 
     private suspend fun captureScreenshot(service: XiaomanAccessibilityService): Shot {
+        // Android 10 lacks AccessibilityService.takeScreenshot (API 30); capture via MediaProjection
+        // when wired, otherwise observe node-only. Secure (FLAG_SECURE) screens come back as black
+        // frames and are detected in encode().
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            val bitmap = projectionCapture?.captureBitmap()
+            return bitmap?.let { withContext(Dispatchers.Default) { encode(it) } } ?: Shot(null, secure = false)
+        }
         repeat(SCREENSHOT_ATTEMPTS) {
             // Android allows one takeScreenshot per second per service.
             val wait = lastScreenshotAt + SCREENSHOT_INTERVAL_MS - SystemClock.uptimeMillis()

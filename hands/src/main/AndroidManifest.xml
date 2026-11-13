@@ -13,7 +13,23 @@
         </intent>
     </queries>
 
+    <!-- Android 10 only: MediaProjection screen capture (see ProjectionCapture). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
     <application>
+        <!-- One-tap system consent dialog for MediaProjection (Android 10). -->
+        <activity
+            android:name="dev.xiaoman.hands.ProjectionConsentActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Keeps the MediaProjection grant alive while the session captures the screen (Android 10). -->
+        <service
+            android:name="dev.xiaoman.hands.ProjectionService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
         <!-- Must be exported so the system can bind it; only holders of BIND_ACCESSIBILITY_SERVICE (the system) can. -->
         <service
             android:name="dev.xiaoman.hands.XiaomanAccessibilityService"

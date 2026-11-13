@@ -7,7 +7,9 @@ remembers what you tell it and operates the other apps on the phone for you (打
 New scenarios are **skills**: small `SKILL.md` + `flow.yaml` folders you can push without rebuilding
 the APK.
 
-- Android 11 (API 30) or newer. It uses an accessibility service to read the screen and act.
+- Android 10 (API 29) or newer. It uses an accessibility service to read the screen and act.
+  Android 11+ takes screenshots through the accessibility API; on Android 10 the first screenshot
+  shows the system screen-capture dialog once per session (one tap on "Start now").
 - iOS cannot run it on the phone alone (one app may not operate other apps). You can try it from a Mac
   that drives the iPhone through WebDriverAgent; see [docs/ios.md](docs/ios.md) (Chinese).
 - MCP servers (Amap, Tencent Maps, DiDi, 12306 ...) can serve lookups and bookings without operating

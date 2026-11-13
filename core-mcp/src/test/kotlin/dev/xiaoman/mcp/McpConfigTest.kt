@@ -105,4 +105,27 @@ class McpConfigTest {
         val bearer = McpServerConfig("bearer", headers = mapOf("Authorization" to "Bearer abcdef"))
         assertEquals("***", bearer.redactor.redact("abcdef"))
     }
+
+    @Test fun oddQueryStringsDoNotThrowWhileRedacting() {
+        // "?a=1&" and "?a=1&&b=2" split into more segments than the URL has query parameters.
+        listOf("https://example.test/mcp?a=1&", "https://example.test/mcp?a=1&&b=secretvalue", "https://example.test/mcp?&").forEach {
+            val config = McpConfig.parse("""{"mcpServers":{"s":{"url":"$it"}}}""", emptyMap())
+            assertEquals(listOf("s"), config.servers.map { server -> server.name })
+        }
+    }
+
+    @Test fun anUnreadableConfigFileIsAWarningNotAnException() {
+        val dir = File.createTempFile("mcp-test", "").let { file ->
+            file.delete()
+            file.mkdirs()
+            file
+        }
+        try {
+            val config = McpConfig.load(dir, emptyMap())
+            assertTrue(config.servers.isEmpty())
+            assertEquals(1, config.warnings.size)
+        } finally {
+            dir.delete()
+        }
+    }
 }

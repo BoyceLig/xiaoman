@@ -4,7 +4,7 @@
 App。框架负责“手”（无障碍操作）、“眼”（读屏）、记忆、安全闸门和模型调用；具体场景（打车、外卖、
 购票……）由用户以**场景技能**的形式添加。技能是 Markdown/YAML 小文件夹，不需要重新打包 APK。
 
-需要 Android 11（API 30）及以上。iOS 不允许一个 App 操作其他 App，只能由 Mac 通过 WebDriverAgent 操作 iPhone（`ios-hands` + `ios-runner`），见 [ios.md](ios.md)。
+需要 Android 10（API 29）及以上（Android 11+ 用无障碍 API 截屏；Android 10 走 MediaProjection，首次截屏需用户点一次系统授权框，会话内复用）。iOS 不允许一个 App 操作其他 App，只能由 Mac 通过 WebDriverAgent 操作 iPhone（`ios-hands` + `ios-runner`），见 [ios.md](ios.md)。
 
 ## 模块
 

@@ -33,8 +33,11 @@ class McpConfig(val servers: List<McpServerConfig> = emptyList(), val warnings: 
     override fun toString() = "McpConfig(servers=$servers, warnings=$warnings)"
 
     companion object {
+        /** A missing or unreadable `mcp.json` must never take the app down; it becomes a warning. */
         fun load(file: File, env: Map<String, String> = System.getenv()): McpConfig =
-            if (file.exists()) parse(file.readText(), env) else McpConfig()
+            if (!file.exists()) McpConfig()
+            else runCatching { parse(file.readText(), env) }
+                .getOrElse { McpConfig(warnings = listOf("MCP 配置读取失败：${it.javaClass.simpleName}")) }
 
         fun parse(json: String, env: Map<String, String> = System.getenv()): McpConfig {
             val root = try { Json.parseToJsonElement(json) as? JsonObject } catch (_: Exception) { null }
@@ -121,7 +124,10 @@ internal class SecretRedactor(servers: List<McpServerConfig>) {
             server.url?.toHttpUrlOrNull()?.let { url ->
                 url.queryParameterNames.forEach { name -> addAll(url.queryParameterValues(name).filterNotNull()) }
                 url.encodedQuery?.split('&')?.forEachIndexed { index, parameter ->
-                    if ((url.queryParameterValue(index)?.length ?: 0) >= 6) add(parameter.substringAfter('=', ""))
+                    // A query with empty segments ("?a=1&&b=2") splits into more parts than it has
+                    // parameter indexes; asking for those must not throw while redacting.
+                    val value = runCatching { url.queryParameterValue(index) }.getOrNull()
+                    if ((value?.length ?: 0) >= 6) add(parameter.substringAfter('=', ""))
                 }
                 if (url.password.isNotEmpty()) add(url.password)
             }

@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -43,7 +44,10 @@ import dev.xiaoman.mcp.McpCatalog
 import dev.xiaoman.mcp.McpPlatform
 import dev.xiaoman.mcp.McpSelection
 import dev.xiaoman.mcp.ServerStatus
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Services that work on Android, grouped by category. */
 private val catalog: List<CatalogServer> by lazy { McpCatalog.builtIn.availableOn(McpPlatform.ANDROID) }
@@ -55,9 +59,12 @@ private val RECOMMENDED = setOf("amap", "aihot")
 @Composable
 fun McpScreen(graph: AppGraph) {
     val store = graph.mcpSettings
+    val context = LocalContext.current
     var selection by remember { mutableStateOf(store.current) }
     var saved by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
+    var testProblem by remember { mutableStateOf<String?>(null) }
+    var testNotes by remember { mutableStateOf<List<String>>(emptyList()) }
     val status = remember { mutableStateMapOf<String, ServerStatus>() }
     val scope = rememberCoroutineScope()
 
@@ -101,16 +108,42 @@ fun McpScreen(graph: AppGraph) {
             }) { Text(stringResource(R.string.settings_save)) }
             OutlinedButton(enabled = !testing, onClick = {
                 testing = true
+                testProblem = null
+                testNotes = emptyList()
+                // Everything here (config files, keystore, network) can fail; a failure must show up in
+                // the row below, never as an app crash from an uncaught coroutine exception.
                 scope.launch {
                     try {
                         status.clear()
-                        graph.testMcp(selection).forEach { status[it.name] = it }
+                        val (result, notes) = withContext(Dispatchers.IO) {
+                            graph.testMcp(selection) to graph.mcpConfig(selection).warnings
+                        }
+                        result.forEach { status[it.name] = it }
+                        testNotes = notes
+                        if (result.isEmpty()) testProblem = context.getString(R.string.mcp_test_nothing)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        testProblem = context.getString(
+                            R.string.mcp_test_failed,
+                            (e.message ?: e.javaClass.simpleName).take(160),
+                        )
                     } finally {
                         testing = false
                     }
                 }
             }) { Text(stringResource(if (testing) R.string.mcp_testing else R.string.mcp_test)) }
             if (saved) Text(stringResource(R.string.settings_saved))
+        }
+        testProblem?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        if (testNotes.isNotEmpty()) {
+            Text(
+                stringResource(R.string.mcp_test_skipped) + "：" + testNotes.joinToString("；"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

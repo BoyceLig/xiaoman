@@ -1,6 +1,7 @@
 package dev.xiaoman.app
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import dev.xiaoman.agent.XiaomanAgent
 import dev.xiaoman.api.Agent
@@ -8,14 +9,17 @@ import dev.xiaoman.api.ModelRole
 import dev.xiaoman.app.session.AgentSession
 import dev.xiaoman.app.session.SessionTexts
 import dev.xiaoman.app.settings.AppSettings
+import dev.xiaoman.app.settings.ModelSettings
 import dev.xiaoman.app.settings.SettingsStore
 import dev.xiaoman.app.trace.RecordingDevice
 import dev.xiaoman.app.trace.TraceWriter
 import dev.xiaoman.hands.AccessibilityDevice
 import dev.xiaoman.hands.MutableStopSignal
+import dev.xiaoman.hands.ProjectionCapture
 import dev.xiaoman.hands.XiaomanAccessibilityService
 import dev.xiaoman.llm.LlmClientFactory
 import dev.xiaoman.llm.LlmClients
+import dev.xiaoman.llm.ModelProbe
 import dev.xiaoman.app.settings.McpSettingsStore
 import dev.xiaoman.mcp.McpCatalog
 import dev.xiaoman.mcp.McpConfig
@@ -46,7 +50,12 @@ import java.io.IOException
  * HTTP only; keys are written in the file because Android has no environment); bundled skills are
  * extracted to `<files>/bundled-skills/`.
  */
-class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.default) {
+class AppGraph(
+    context: Context,
+    private val llm: LlmClientFactory = LlmClients.default,
+    /** Test seam: [SettingsStore.create] needs the Android keystore, which plain JVM tests lack. */
+    private val givenSettings: SettingsStore? = null,
+) {
     private val app: Context = context.applicationContext
 
     /** Process-wide scope; the session runs agent work here. */
@@ -59,7 +68,7 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
     val bundledSkillsDir = File(app.filesDir, "bundled-skills")
     val mcpFile = File(externalRoot, "mcp.json")
 
-    val settings: SettingsStore by lazy { SettingsStore.create(app) }
+    val settings: SettingsStore by lazy { givenSettings ?: SettingsStore.create(app) }
 
     val memory by lazy { FileMemoryStore(memoryDir) }
 
@@ -76,7 +85,9 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
 
     /** MCP config of [selection] plus the HTTP servers of the optional `mcp.json` (stdio needs a desktop). */
     fun mcpConfig(selection: McpSelection): McpConfig {
-        val ticked = McpCatalog.builtIn.toConfig(selection, McpPlatform.ANDROID)
+        // Building the config reads a bundled catalog and a user file; neither may crash the UI or a task.
+        val ticked = runCatching { McpCatalog.builtIn.toConfig(selection, McpPlatform.ANDROID) }
+            .getOrElse { return McpConfig(warnings = listOf("MCP 配置无法生成：${it.message ?: it.javaClass.simpleName}")) }
         val file = McpConfig.load(mcpFile, emptyMap())
         val fileServers = file.servers.filter { it.enabled && it.url != null && ticked.servers.none { t -> t.name == it.name } }
         (ticked.warnings + file.warnings).forEach { Log.w(TAG, "mcp: $it") }
@@ -101,6 +112,13 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
         return McpToolProvider(config, { false }).use { it.status(refresh = true) }
     }
 
+    /**
+     * One real request to [settings], for the 测试连接 button under each model.
+     * The operator model is asked about a tiny image: it must be able to read screenshots.
+     */
+    suspend fun testModel(settings: ModelSettings, role: ModelRole): ModelProbe.Report =
+        ModelProbe.run(settings.toModelConfig(role), withImage = role == ModelRole.OPERATOR)
+
     val runIds = RunIds()
     val uiVisible = MutableStateFlow(false)
 
@@ -113,7 +131,14 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
         )
     }
 
-    val accessibilityDevice by lazy { AccessibilityDevice({ XiaomanAccessibilityService.instance.value }, app) }
+    val accessibilityDevice by lazy {
+        AccessibilityDevice(
+            { XiaomanAccessibilityService.instance.value },
+            app,
+            // Android 11+ uses the accessibility screenshot API; Android 10 needs MediaProjection.
+            projectionCapture = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) ProjectionCapture(app) else null,
+        )
+    }
 
     private val device by lazy { RecordingDevice(accessibilityDevice, traces::saveScreenshot) }
 
