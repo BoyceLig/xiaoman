@@ -54,6 +54,7 @@ private fun SkillsPreview() = XiaomanTheme {
             state = SkillsState(skills = demoSkills, loading = false),
             skillsDir = "/sdcard/Android/data/dev.xiaoman.app/files/skills",
             onReload = {},
+            onAuthorSkill = {},
         )
     }
 }

@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -22,12 +25,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -70,20 +80,36 @@ class SkillsViewModel(
 }
 
 @Composable
-fun SkillsScreen(graph: AppGraph) {
+fun SkillsScreen(graph: AppGraph, onAuthorSkill: (String) -> Unit) {
     val vm = viewModel { SkillsViewModel(graph.skills, { graph.startup.await() }, graph::logSkillProblems) }
     val state by vm.state.collectAsStateWithLifecycle()
-    SkillsContent(state, graph.skillsDir.path, vm::reload)
+    // Reload whenever the screen comes back to the foreground (the user may have pushed skills over adb).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var skipFirstResume by remember { mutableStateOf(true) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (skipFirstResume) skipFirstResume = false else vm.reload()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    SkillsContent(state, graph.skillsDir.path, vm::reload, onAuthorSkill)
 }
 
 @Composable
-internal fun SkillsContent(state: SkillsState, skillsDir: String, onReload: () -> Unit) {
+internal fun SkillsContent(state: SkillsState, skillsDir: String, onReload: () -> Unit, onAuthorSkill: (String) -> Unit) {
+    val newSkillPrompt = stringResource(R.string.chat_new_skill_prompt)
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(
             title = stringResource(R.string.skills_title),
             subtitle = if (state.loading) "正在加载…" else "已加载 ${state.skills.size} 个技能",
             eyebrow = "skills",
             actions = {
+                FilledTonalIconButton(onClick = { onAuthorSkill(newSkillPrompt) }) {
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.skills_new), modifier = Modifier.size(20.dp))
+                }
                 FilledTonalIconButton(onClick = onReload, enabled = !state.loading) {
                     Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.skills_reload), modifier = Modifier.size(20.dp))
                 }
@@ -105,7 +131,11 @@ internal fun SkillsContent(state: SkillsState, skillsDir: String, onReload: () -
                     )
                 }
             }
-            items(state.skills, key = { it.name }) { skill -> SkillCard(skill) }
+            items(state.skills, key = { it.name }) { skill ->
+                val isUserSkill = skill.source.startsWith(skillsDir)
+                val editPrompt = stringResource(R.string.chat_edit_skill_prompt, skill.name)
+                SkillCard(skill, isUserSkill) { onAuthorSkill(editPrompt) }
+            }
             if (state.problems.isNotEmpty()) {
                 item { SectionLabel(stringResource(R.string.skills_problems)) }
                 items(state.problems) { problem -> ProblemCard(problem) }
@@ -115,7 +145,7 @@ internal fun SkillsContent(state: SkillsState, skillsDir: String, onReload: () -
 }
 
 @Composable
-private fun SkillCard(skill: Skill) {
+private fun SkillCard(skill: Skill, isUserSkill: Boolean, onEdit: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -133,6 +163,9 @@ private fun SkillCard(skill: Skill) {
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
+                    if (isUserSkill) {
+                        Pill(stringResource(R.string.skills_mine), container = MaterialTheme.colorScheme.primaryContainer, content = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
                     channelLabel(skill.channel)?.let { Pill(it) }
                 }
                 Text(
@@ -158,6 +191,11 @@ private fun SkillCard(skill: Skill) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            if (isUserSkill) {
+                FilledTonalIconButton(onClick = onEdit, modifier = Modifier.align(Alignment.CenterVertically).size(34.dp)) {
+                    Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.skills_edit), modifier = Modifier.size(16.dp))
+                }
             }
         }
     }
