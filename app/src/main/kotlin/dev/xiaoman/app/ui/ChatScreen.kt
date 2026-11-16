@@ -100,30 +100,29 @@ fun ChatScreen(graph: AppGraph, onOpenSettings: () -> Unit) {
             ApprovalCard(approval!!, session)
         } else {
             if (busy) TaskStatus(status ?: "正在想办法…", session::stop)
-            ChatInput(draft, { draft = it }, session, busy, question != null)
+            ChatInputBar(
+                text = draft,
+                onTextChange = { draft = it },
+                busy = busy,
+                answering = question != null,
+                // Read the draft at click time: a captured String would keep the first frame's value.
+                onSend = {
+                    val message = draft.trim()
+                    if (message.isNotEmpty() && (!busy || question != null)) {
+                        when (session.submit(message)) {
+                            AgentSession.Submit.Busy, AgentSession.Submit.Empty -> Unit
+                            else -> {
+                                draft = ""
+                                focus.clearFocus()
+                                keyboard?.hide()
+                            }
+                        }
+                    }
+                },
+                onStop = session::stop,
+            )
         }
     }
-}
-
-@Composable
-private fun ChatInput(text: String, onChange: (String) -> Unit, session: AgentSession, busy: Boolean, answering: Boolean) {
-    val focus = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
-    fun send() {
-        if (text.isBlank() || (busy && !answering)) return
-        when (session.submit(text)) {
-            AgentSession.Submit.Busy, AgentSession.Submit.Empty -> Unit
-            else -> { onChange(""); focus.clearFocus(); keyboard?.hide() }
-        }
-    }
-    ChatInputBar(
-        text = text,
-        onTextChange = onChange,
-        busy = busy,
-        answering = answering,
-        onSend = ::send,
-        onStop = session::stop,
-    )
 }
 
 /** Stateless composer bar, shared by the chat screen and Compose previews. */

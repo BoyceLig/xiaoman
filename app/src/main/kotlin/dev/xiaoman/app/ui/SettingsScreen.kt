@@ -153,7 +153,8 @@ fun SettingsScreen(graph: AppGraph) {
                 Button(
                     enabled = parsed != null,
                     onClick = {
-                        parsed?.let {
+                        // Parse at click time: the composition-time value can lag behind the last keystroke.
+                        form.toSettings()?.let {
                             store.save(it)
                             saved = true
                         }
