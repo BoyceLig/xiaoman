@@ -63,7 +63,9 @@ class McpConfig(val servers: List<McpServerConfig> = emptyList(), val warnings: 
                 val secrets = mutableSetOf<String>()
                 fun substitute(element: JsonElement): JsonElement = when (element) {
                     is JsonPrimitive -> if (!element.isString) element else JsonPrimitive(
-                        Regex("\\$\\{([A-Za-z_][A-Za-z0-9_]*)}").replace(element.content) { match ->
+                        // Android 的 java.util.regex 不接受裸的右花括号，必须转义；
+                        // 未转义时整个 MCP 配置生成会抛 PatternSyntaxException。
+                        Regex("\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}").replace(element.content) { match ->
                             val variable = match.groupValues[1]
                             env[variable]?.also { secrets += it } ?: run { missing += variable; "" }
                         }
