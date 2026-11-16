@@ -8,6 +8,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,12 +35,14 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.xiaoman.api.Skill
 import dev.xiaoman.app.AppGraph
 import dev.xiaoman.app.R
 import dev.xiaoman.app.session.AgentSession
@@ -65,6 +68,12 @@ fun ChatScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val notificationsGranted = rememberNotificationPermission()
     var draft by rememberSaveable { mutableStateOf("") }
+    // 技能选择：进入聊天页时加载一次，供输入框「/」快捷选择使用。
+    var skills by remember { mutableStateOf<List<Skill>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        runCatching { graph.startup.await() }
+        skills = runCatching { graph.skills.list() }.getOrDefault(emptyList())
+    }
     // A draft handed over from the skills screen: prefill the input once (no auto-send) and clear the handoff.
     LaunchedEffect(pendingDraft) {
         if (!pendingDraft.isNullOrEmpty()) {
@@ -117,6 +126,8 @@ fun ChatScreen(
                 onTextChange = { draft = it },
                 busy = busy,
                 answering = question != null,
+                skills = skills,
+                onPickSkill = { skill -> draft = skillCall(skill) },
                 // Read the draft at click time: a captured String would keep the first frame's value.
                 onSend = {
                     val message = draft.trim()
@@ -137,6 +148,9 @@ fun ChatScreen(
     }
 }
 
+/** 选中技能后填进输入框的调用语句；技能名会让 agent 在技能索引里精确命中。 */
+private fun skillCall(skill: Skill): String = "用技能 ${skill.name}："
+
 /** Stateless composer bar, shared by the chat screen and Compose previews. */
 @Composable
 internal fun ChatInputBar(
@@ -146,11 +160,17 @@ internal fun ChatInputBar(
     answering: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    skills: List<Skill> = emptyList(),
+    onPickSkill: (Skill) -> Unit = {},
 ) {
     val stopMode = busy && !answering
     val canSend = text.isNotBlank() && !stopMode
+    val pickerQuery = if (text.startsWith("/")) text.drop(1).trim() else null
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxWidth()) {
+            if (pickerQuery != null && !stopMode) {
+                SkillPicker(skills = skills, query = pickerQuery, onPick = onPickSkill)
+            }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(
                 Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
@@ -162,7 +182,7 @@ internal fun ChatInputBar(
                     modifier = Modifier.weight(1f),
                     placeholder = {
                         Text(
-                            if (answering) "告诉我就好…" else "说说你想做什么…",
+                            if (answering) "告诉我就好…" else "说说你想做什么，输入 / 选技能",
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                         )
@@ -191,6 +211,63 @@ internal fun ChatInputBar(
                         if (stopMode) Icons.Default.Stop else Icons.Default.ArrowUpward,
                         contentDescription = stringResource(if (stopMode) R.string.chat_stop else R.string.chat_send),
                     )
+                }
+            }
+        }
+    }
+}
+
+/** 输入框「/」唤出的技能选择面板：按名称或描述过滤，点一行即填进输入框。 */
+@Composable
+private fun SkillPicker(skills: List<Skill>, query: String, onPick: (Skill) -> Unit) {
+    val matched = remember(skills, query) {
+        if (query.isEmpty()) {
+            skills
+        } else {
+            skills.filter { it.name.contains(query, ignoreCase = true) || it.description.contains(query, ignoreCase = true) }
+        }
+    }
+    Column(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                if (query.isEmpty()) "选择技能" else "匹配「$query」",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.weight(1f))
+            Text("${matched.size} 个", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+        }
+        if (matched.isEmpty()) {
+            Text(
+                if (skills.isEmpty()) "还没有技能，去「技能」页看看" else "没有匹配的技能",
+                Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            LazyColumn {
+                items(matched, key = { it.name }) { skill ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clickable { onPick(skill) }
+                            .padding(horizontal = 18.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MonogramTile(skill.name, size = 30.dp)
+                        Column(Modifier.weight(1f).padding(start = 11.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(skill.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 1)
+                            Text(
+                                skill.description,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
             }
         }
