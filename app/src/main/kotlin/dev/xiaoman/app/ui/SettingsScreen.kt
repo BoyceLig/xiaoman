@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,10 +20,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,14 +43,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.xiaoman.app.AppGraph
 import dev.xiaoman.app.R
@@ -67,81 +74,123 @@ fun SettingsScreen(graph: AppGraph) {
     var saved by remember { mutableStateOf(false) }
     val parsed = form.toSettings()
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge)
-
-        ModelSection(
-            title = stringResource(R.string.settings_chat_model),
-            model = form.chat,
-            role = ModelRole.CHAT,
-            fetchModels = ModelCatalog::list,
-            probe = graph::testModel,
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        ScreenHeader(stringResource(R.string.settings_title), "模型、任务与本地文件夹", eyebrow = "settings")
+        Column(
+            Modifier.padding(start = ScreenPadding, end = ScreenPadding, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            form = form.copy(chat = it)
-            saved = false
-        }
-        HorizontalDivider()
-        ModelSection(
-            title = stringResource(R.string.settings_operator_model),
-            model = form.operator,
-            role = ModelRole.OPERATOR,
-            fetchModels = ModelCatalog::list,
-            probe = graph::testModel,
-        ) {
-            form = form.copy(operator = it)
-            saved = false
-        }
-        TextButton(onClick = {
-            form = form.copy(operator = form.operator.copy(baseUrl = form.chat.baseUrl, apiKey = form.chat.apiKey))
-            saved = false
-        }) { Text(stringResource(R.string.settings_copy_chat)) }
-        HorizontalDivider()
-
-        Text(stringResource(R.string.settings_agent), style = MaterialTheme.typography.titleMedium)
-        OutlinedTextField(
-            value = form.maxSteps,
-            onValueChange = {
-                form = form.copy(maxSteps = it)
+            ModelSection(
+                title = stringResource(R.string.settings_chat_model),
+                subtitle = "理解你的话，决定要做什么",
+                icon = Icons.AutoMirrored.Outlined.Chat,
+                model = form.chat,
+                role = ModelRole.CHAT,
+                fetchModels = ModelCatalog::list,
+                probe = graph::testModel,
+            ) {
+                form = form.copy(chat = it)
                 saved = false
-            },
-            label = { Text(stringResource(R.string.settings_max_steps)) },
-            isError = !form.maxStepsValid,
-            supportingText = { if (!form.maxStepsValid) Text(stringResource(R.string.settings_invalid_number)) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.settings_learn), modifier = Modifier.weight(1f))
-            Switch(checked = form.learnFromSuccess, onCheckedChange = {
-                form = form.copy(learnFromSuccess = it)
+            }
+            ModelSection(
+                title = stringResource(R.string.settings_operator_model),
+                subtitle = "看屏幕，决定下一步点哪里",
+                icon = Icons.Outlined.Image,
+                model = form.operator,
+                role = ModelRole.OPERATOR,
+                fetchModels = ModelCatalog::list,
+                probe = graph::testModel,
+            ) {
+                form = form.copy(operator = it)
                 saved = false
-            })
-        }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = {
+                    form = form.copy(
+                        operator = form.operator.copy(
+                            baseUrl = form.chat.baseUrl,
+                            model = form.chat.model,
+                            apiKey = form.chat.apiKey,
+                            temperature = form.chat.temperature,
+                        ),
+                    )
+                    saved = false
+                }) { Text(stringResource(R.string.settings_copy_chat)) }
+            }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Button(enabled = parsed != null, onClick = {
-                parsed?.let {
-                    store.save(it)
-                    saved = true
-                }
-            }) { Text(stringResource(R.string.settings_save)) }
-            if (saved) {
-                Text(
-                    stringResource(R.string.settings_saved),
-                    modifier = Modifier.padding(start = 12.dp).semantics { liveRegion = LiveRegionMode.Polite },
+            SectionCard {
+                SectionCardHeader(Icons.Outlined.Tune, stringResource(R.string.settings_agent), "小满执行任务时的行为")
+                OutlinedTextField(
+                    value = form.maxSteps,
+                    onValueChange = {
+                        form = form.copy(maxSteps = it)
+                        saved = false
+                    },
+                    label = { Text(stringResource(R.string.settings_max_steps)) },
+                    isError = !form.maxStepsValid,
+                    supportingText = { if (!form.maxStepsValid) Text(stringResource(R.string.settings_invalid_number)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(stringResource(R.string.settings_learn), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "成功路径会写进记忆，下次更省步骤",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = form.learnFromSuccess, onCheckedChange = {
+                        form = form.copy(learnFromSuccess = it)
+                        saved = false
+                    })
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    enabled = parsed != null,
+                    onClick = {
+                        parsed?.let {
+                            store.save(it)
+                            saved = true
+                        }
+                    },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                ) { Text(stringResource(R.string.settings_save)) }
+                if (saved) {
+                    Pill(
+                        stringResource(R.string.settings_saved),
+                        container = MaterialTheme.colorScheme.primaryContainer,
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+            }
+
+            SectionCard {
+                SectionCardHeader(Icons.Outlined.Folder, stringResource(R.string.settings_folders), "都存在手机上，可直接拷贝")
+                FolderRow("技能", graph.skillsDir.path)
+                FolderRow("记忆", graph.memoryDir.path)
+                FolderRow("轨迹", graph.tracesDir.path)
             }
         }
+    }
+}
 
-        HorizontalDivider()
-        Text(stringResource(R.string.settings_folders), style = MaterialTheme.typography.titleMedium)
-        Text(stringResource(R.string.settings_folder_skills, graph.skillsDir.path), style = MaterialTheme.typography.bodySmall)
-        Text(stringResource(R.string.settings_folder_memory, graph.memoryDir.path), style = MaterialTheme.typography.bodySmall)
-        Text(stringResource(R.string.settings_folder_traces, graph.tracesDir.path), style = MaterialTheme.typography.bodySmall)
+@Composable
+private fun FolderRow(label: String, path: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            path,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -151,8 +200,10 @@ fun SettingsScreen(graph: AppGraph) {
  * request and reports either the reply or the reason it failed.
  */
 @Composable
-private fun ModelSection(
+internal fun ModelSection(
     title: String,
+    subtitle: String,
+    icon: ImageVector,
     model: SettingsForm.ModelForm,
     role: ModelRole,
     fetchModels: suspend (baseUrl: String, apiKey: String, needImage: Boolean) -> ModelCatalog.Catalog,
@@ -232,95 +283,98 @@ private fun ModelSection(
         }
     }
 
-    Text(title, style = MaterialTheme.typography.titleMedium)
-    OutlinedTextField(
-        value = model.baseUrl,
-        onValueChange = { update(model.copy(baseUrl = it)) },
-        label = { Text(stringResource(R.string.settings_base_url)) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    OutlinedTextField(
-        value = model.model,
-        onValueChange = {
-            filledOne = false
-            update(model.copy(model = it))
-        },
-        label = { Text(stringResource(R.string.settings_model)) },
-        singleLine = true,
-        isError = problem != null,
-        supportingText = {
-            when {
-                problem != null -> Text(problem.orEmpty())
-                filledOne -> Text(stringResource(R.string.settings_models_filled))
-            }
-        },
-        trailingIcon = {
-            if (fetching) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            } else {
-                IconButton(enabled = model.baseUrl.isNotBlank(), onClick = ::refresh) {
-                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.settings_fetch_models))
-                }
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    OutlinedTextField(
-        value = model.apiKey,
-        onValueChange = { update(model.copy(apiKey = it)) },
-        label = { Text(stringResource(R.string.settings_api_key)) },
-        singleLine = true,
-        visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-        trailingIcon = {
-            IconButton(onClick = { showKey = !showKey }) {
-                Icon(
-                    if (showKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                    contentDescription = stringResource(if (showKey) R.string.settings_hide_key else R.string.settings_show_key),
-                )
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    OutlinedTextField(
-        value = model.temperature,
-        onValueChange = { update(model.copy(temperature = it)) },
-        label = { Text(stringResource(R.string.settings_temperature)) },
-        isError = !model.temperatureValid,
-        supportingText = { if (!model.temperatureValid) Text(stringResource(R.string.settings_invalid_number)) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-
-    OutlinedButton(
-        enabled = !testing && model.baseUrl.isNotBlank() && model.model.isNotBlank(),
-        onClick = ::test,
-    ) {
-        if (testing) {
-            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.settings_probe_running))
-        } else {
-            Text(stringResource(R.string.settings_probe))
-        }
-    }
-    val result = report
-    when {
-        result != null -> Text(
-            result.detail,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (result.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-            modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
-        )
-        !testing && (model.baseUrl.isBlank() || model.model.isBlank()) -> Text(
-            stringResource(R.string.settings_probe_blank),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    SectionCard {
+        SectionCardHeader(icon, title, subtitle)
+        OutlinedTextField(
+            value = model.baseUrl,
+            onValueChange = { update(model.copy(baseUrl = it)) },
+            label = { Text(stringResource(R.string.settings_base_url)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        OutlinedTextField(
+            value = model.model,
+            onValueChange = {
+                filledOne = false
+                update(model.copy(model = it))
+            },
+            label = { Text(stringResource(R.string.settings_model)) },
+            singleLine = true,
+            isError = problem != null,
+            supportingText = {
+                when {
+                    problem != null -> Text(problem.orEmpty())
+                    filledOne -> Text(stringResource(R.string.settings_models_filled))
+                }
+            },
+            trailingIcon = {
+                if (fetching) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    IconButton(enabled = model.baseUrl.isNotBlank(), onClick = ::refresh) {
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.settings_fetch_models))
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = model.apiKey,
+            onValueChange = { update(model.copy(apiKey = it)) },
+            label = { Text(stringResource(R.string.settings_api_key)) },
+            singleLine = true,
+            visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+            trailingIcon = {
+                IconButton(onClick = { showKey = !showKey }) {
+                    Icon(
+                        if (showKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = stringResource(if (showKey) R.string.settings_hide_key else R.string.settings_show_key),
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = model.temperature,
+            onValueChange = { update(model.copy(temperature = it)) },
+            label = { Text(stringResource(R.string.settings_temperature)) },
+            isError = !model.temperatureValid,
+            supportingText = { if (!model.temperatureValid) Text(stringResource(R.string.settings_invalid_number)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        OutlinedButton(
+            enabled = !testing && model.baseUrl.isNotBlank() && model.model.isNotBlank(),
+            onClick = ::test,
+            modifier = Modifier.fillMaxWidth().height(44.dp),
+        ) {
+            if (testing) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.size(8.dp))
+                Text(stringResource(R.string.settings_probe_running))
+            } else {
+                Text(stringResource(R.string.settings_probe))
+            }
+        }
+        val result = report
+        when {
+            result != null -> Text(
+                result.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (result.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            !testing && (model.baseUrl.isBlank() || model.model.isBlank()) -> Text(
+                stringResource(R.string.settings_probe_blank),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 
     choices?.let { catalog ->

@@ -3,11 +3,15 @@ package dev.xiaoman.app.ui
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -37,16 +41,53 @@ internal fun ApprovalCard(pending: PendingApproval, session: AgentSession) {
             session.answerApproval(ApprovalAnswer(true, approvalScope), pending.id)
         }
     }
-    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.large,
-        modifier = Modifier.fillMaxWidth().padding(12.dp).semantics { liveRegion = LiveRegionMode.Assertive }) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("这一步，请你确认", style = MaterialTheme.typography.titleSmall)
-            Text(pending.request.prompt, style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.heightIn(max = 110.dp).verticalScroll(rememberScrollState()))
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f)),
+        shadowElevation = 8.dp,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)
+            .semantics { liveRegion = LiveRegionMode.Assertive },
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                IconTile(
+                    Icons.Outlined.VerifiedUser,
+                    size = 38.dp,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    container = MaterialTheme.colorScheme.tertiaryContainer,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text("这一步，请你确认", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "小满会等你点头再继续",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                shape = MaterialTheme.shapes.medium,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Text(
+                    pending.request.prompt,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 110.dp).verticalScroll(rememberScrollState()).padding(12.dp),
+                )
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = { responding = true; session.answerApproval(ApprovalAnswer(false), pending.id) },
-                    enabled = !responding, modifier = Modifier.weight(1f)) { Text("暂不允许") }
-                Button(onClick = { approve(ApprovalScope.ONCE) }, enabled = !responding, modifier = Modifier.weight(1f)) { Text("允许一次") }
+                OutlinedButton(
+                    onClick = { responding = true; session.answerApproval(ApprovalAnswer(false), pending.id) },
+                    enabled = !responding,
+                    modifier = Modifier.weight(1f).height(46.dp),
+                ) { Text("暂不允许") }
+                Button(
+                    onClick = { approve(ApprovalScope.ONCE) },
+                    enabled = !responding,
+                    modifier = Modifier.weight(1f).height(46.dp),
+                ) { Text("允许一次") }
             }
             if (more) {
                 TextButton(onClick = { approve(ApprovalScope.TASK) }, enabled = !responding) {

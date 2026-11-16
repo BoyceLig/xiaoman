@@ -5,18 +5,25 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,6 +41,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.xiaoman.app.AppGraph
 import dev.xiaoman.app.R
@@ -73,135 +81,181 @@ fun McpScreen(graph: AppGraph) {
         saved = false
     }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(stringResource(R.string.mcp_title), style = MaterialTheme.typography.titleLarge)
-        Text(stringResource(R.string.mcp_intro), style = MaterialTheme.typography.bodyMedium)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.mcp_enabled_count, selection.enabled.size + selection.custom.size), modifier = Modifier.weight(1f))
-            OutlinedButton(onClick = { update(selection.copy(enabled = selection.enabled + RECOMMENDED)) }) {
-                Text(stringResource(R.string.mcp_recommended))
-            }
-        }
-
-        catalog.groupBy { it.category }.forEach { (category, servers) ->
-            Text(category, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
-            servers.forEach { server ->
-                ServiceCard(
-                    server = server,
-                    selection = selection,
-                    status = status[server.id],
-                    onChange = ::update,
-                )
-            }
-        }
-
-        HorizontalDivider()
-        CustomServers(selection, status, ::update)
-
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = {
-                store.save(selection)
-                saved = true
-            }) { Text(stringResource(R.string.settings_save)) }
-            OutlinedButton(enabled = !testing, onClick = {
-                testing = true
-                testProblem = null
-                testNotes = emptyList()
-                // Everything here (config files, keystore, network) can fail; a failure must show up in
-                // the row below, never as an app crash from an uncaught coroutine exception.
-                scope.launch {
-                    try {
-                        status.clear()
-                        val (result, notes) = withContext(Dispatchers.IO) {
-                            graph.testMcp(selection) to graph.mcpConfig(selection).warnings
-                        }
-                        result.forEach { status[it.name] = it }
-                        testNotes = notes
-                        if (result.isEmpty()) testProblem = context.getString(R.string.mcp_test_nothing)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Throwable) {
-                        testProblem = context.getString(
-                            R.string.mcp_test_failed,
-                            (e.message ?: e.javaClass.simpleName).take(160),
-                        )
-                    } finally {
-                        testing = false
-                    }
-                }
-            }) { Text(stringResource(if (testing) R.string.mcp_testing else R.string.mcp_test)) }
-            if (saved) Text(stringResource(R.string.settings_saved))
-        }
-        testProblem?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
-        if (testNotes.isNotEmpty()) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        ScreenHeader(stringResource(R.string.mcp_title), "勾选即启用，从下一条消息开始生效", eyebrow = "services")
+        Column(
+            Modifier.padding(start = ScreenPadding, end = ScreenPadding, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
             Text(
-                stringResource(R.string.mcp_test_skipped) + "：" + testNotes.joinToString("；"),
+                stringResource(R.string.mcp_intro),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            SectionCard {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    IconTile(Icons.Outlined.Hub)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            stringResource(R.string.mcp_enabled_count, selection.enabled.size + selection.custom.size),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            "会改数据或产生费用的操作，仍会先问你",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = { update(selection.copy(enabled = selection.enabled + RECOMMENDED)) }) {
+                        Text(stringResource(R.string.mcp_recommended))
+                    }
+                }
+            }
+
+            catalog.groupBy { it.category }.forEach { (category, servers) ->
+                SectionLabel(category)
+                servers.forEach { server ->
+                    ServiceCard(
+                        server = server,
+                        selection = selection,
+                        status = status[server.id],
+                        onChange = ::update,
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            CustomServers(selection, status, ::update)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = {
+                        store.save(selection)
+                        saved = true
+                    },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                ) { Text(stringResource(R.string.settings_save)) }
+                OutlinedButton(
+                    enabled = !testing,
+                    onClick = {
+                        testing = true
+                        testProblem = null
+                        testNotes = emptyList()
+                        // Everything here (config files, keystore, network) can fail; a failure must show up in
+                        // the row below, never as an app crash from an uncaught coroutine exception.
+                        scope.launch {
+                            try {
+                                status.clear()
+                                val (result, notes) = withContext(Dispatchers.IO) {
+                                    graph.testMcp(selection) to graph.mcpConfig(selection).warnings
+                                }
+                                result.forEach { status[it.name] = it }
+                                testNotes = notes
+                                if (result.isEmpty()) testProblem = context.getString(R.string.mcp_test_nothing)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Throwable) {
+                                testProblem = context.getString(
+                                    R.string.mcp_test_failed,
+                                    (e.message ?: e.javaClass.simpleName).take(160),
+                                )
+                            } finally {
+                                testing = false
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                ) { Text(stringResource(if (testing) R.string.mcp_testing else R.string.mcp_test)) }
+            }
+            if (saved) {
+                Text(stringResource(R.string.settings_saved), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+            testProblem?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            if (testNotes.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.mcp_test_skipped) + "：" + testNotes.joinToString("；"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ServiceCard(server: CatalogServer, selection: McpSelection, status: ServerStatus?, onChange: (McpSelection) -> Unit) {
+internal fun ServiceCard(server: CatalogServer, selection: McpSelection, status: ServerStatus?, onChange: (McpSelection) -> Unit) {
     val enabled = server.id in selection.enabled
     val uri = LocalUriHandler.current
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(server.title, style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            stringResource(if (server.official) R.string.mcp_official else R.string.mcp_community),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    Text(server.description, style = MaterialTheme.typography.bodySmall)
-                }
-                Switch(checked = enabled, onCheckedChange = { on ->
-                    onChange(selection.copy(enabled = if (on) selection.enabled + server.id else selection.enabled - server.id))
-                })
-            }
-            if (enabled) {
-                server.keys.forEach { key ->
-                    OutlinedTextField(
-                        value = selection.keys[key.name].orEmpty(),
-                        onValueChange = { onChange(selection.copy(keys = selection.keys + (key.name to it.trim()))) },
-                        label = { Text(key.label) },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-                        modifier = Modifier.fillMaxWidth(),
+    SectionCard {
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            MonogramTile(server.title, size = 40.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(server.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Pill(
+                        stringResource(if (server.official) R.string.mcp_official else R.string.mcp_community),
+                        container = MaterialTheme.colorScheme.primaryContainer,
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
-                    key.help?.let { help -> TextButton(onClick = { uri.openUri(help) }) { Text(stringResource(R.string.mcp_apply_key)) } }
                 }
-                val missing = server.keys.filter { selection.keys[it.name].isNullOrBlank() }.map { it.label }
-                if (missing.isNotEmpty()) {
-                    Text(stringResource(R.string.mcp_missing_key, missing.joinToString("、")), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error)
+                Text(
+                    server.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = enabled, onCheckedChange = { on ->
+                onChange(selection.copy(enabled = if (on) selection.enabled + server.id else selection.enabled - server.id))
+            })
+        }
+        if (enabled) {
+            server.keys.forEach { key ->
+                OutlinedTextField(
+                    value = selection.keys[key.name].orEmpty(),
+                    onValueChange = { onChange(selection.copy(keys = selection.keys + (key.name to it.trim()))) },
+                    label = { Text(key.label) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                key.help?.let { help ->
+                    TextButton(onClick = { uri.openUri(help) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                        Icon(Icons.Outlined.Link, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Text(stringResource(R.string.mcp_apply_key), modifier = Modifier.padding(start = 4.dp))
+                    }
                 }
             }
-            status?.let { StatusLine(it) }
+            val missing = server.keys.filter { selection.keys[it.name].isNullOrBlank() }.map { it.label }
+            if (missing.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.mcp_missing_key, missing.joinToString("、")),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
+        status?.let { StatusLine(it) }
     }
 }
 
 @Composable
 private fun StatusLine(status: ServerStatus) {
-    if (status.connected) {
-        Text(stringResource(R.string.mcp_connected, status.toolCount), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary)
-    } else {
-        Text(stringResource(R.string.mcp_failed, status.error ?: "?"), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        StatusDot(if (status.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+        Text(
+            if (status.connected) {
+                stringResource(R.string.mcp_connected, status.toolCount)
+            } else {
+                stringResource(R.string.mcp_failed, status.error ?: "?")
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (status.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        )
     }
 }
 
@@ -213,34 +267,60 @@ private fun CustomServers(selection: McpSelection, status: Map<String, ServerSta
     var confirm by remember { mutableStateOf(ConfirmPolicy.WRITES) }
     val problem = url.takeIf { it.isNotBlank() }?.let { McpCatalog.validateCustomUrl(it) }
 
-    Text(stringResource(R.string.mcp_custom_title), style = MaterialTheme.typography.titleMedium)
-    Text(stringResource(R.string.mcp_custom_hint), style = MaterialTheme.typography.bodySmall)
+    SectionLabel(stringResource(R.string.mcp_custom_title))
+    Text(
+        stringResource(R.string.mcp_custom_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
     selection.custom.forEachIndexed { i, c ->
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(c.title.ifBlank { c.url }, style = MaterialTheme.typography.titleSmall)
-                        Text(c.url.substringBefore('?'), style = MaterialTheme.typography.bodySmall)
-                    }
-                    TextButton(onClick = { onChange(selection.copy(custom = selection.custom.filterIndexed { j, _ -> j != i })) }) {
-                        Text(stringResource(R.string.mcp_remove))
-                    }
+        SectionCard {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                IconTile(Icons.Outlined.Link, size = 36.dp)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(c.title.ifBlank { c.url }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        c.url.substringBefore('?'),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
-                status["custom-${i + 1}"]?.let { StatusLine(it) }
+                TextButton(onClick = { onChange(selection.copy(custom = selection.custom.filterIndexed { j, _ -> j != i })) }) {
+                    Text(stringResource(R.string.mcp_remove), color = MaterialTheme.colorScheme.error)
+                }
             }
+            status["custom-${i + 1}"]?.let { StatusLine(it) }
         }
     }
-    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text(stringResource(R.string.mcp_custom_name)) },
-        singleLine = true, modifier = Modifier.fillMaxWidth())
     OutlinedTextField(
-        value = url, onValueChange = { url = it.trim() }, label = { Text(stringResource(R.string.mcp_custom_url)) },
-        isError = problem != null, supportingText = { problem?.let { Text(stringResource(R.string.mcp_custom_invalid, it)) } },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), singleLine = true, modifier = Modifier.fillMaxWidth(),
+        value = title,
+        onValueChange = { title = it },
+        label = { Text(stringResource(R.string.mcp_custom_name)) },
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
-        value = auth, onValueChange = { auth = it }, label = { Text(stringResource(R.string.mcp_custom_auth)) },
-        visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth(),
+        value = url,
+        onValueChange = { url = it.trim() },
+        label = { Text(stringResource(R.string.mcp_custom_url)) },
+        isError = problem != null,
+        supportingText = { problem?.let { Text(stringResource(R.string.mcp_custom_invalid, it)) } },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = auth,
+        onValueChange = { auth = it },
+        label = { Text(stringResource(R.string.mcp_custom_auth)) },
+        visualTransformation = PasswordVisualTransformation(),
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
     )
     Text(stringResource(R.string.mcp_custom_confirm), style = MaterialTheme.typography.bodyMedium)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
