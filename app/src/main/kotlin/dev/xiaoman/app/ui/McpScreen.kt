@@ -1,6 +1,7 @@
 package dev.xiaoman.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,25 +10,28 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -36,9 +40,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -121,6 +127,11 @@ fun McpScreen(graph: AppGraph) {
                         selection = selection,
                         status = status[server.id],
                         onChange = ::update,
+                        onTest = {
+                            // 只测这一家：临时选择里只留当前服务，避免把别的服务一起连。
+                            val single = selection.copy(enabled = setOf(server.id), custom = emptyList())
+                            graph.testMcp(single) to graph.mcpConfig(single).warnings
+                        },
                     )
                 }
             }
@@ -186,9 +197,26 @@ fun McpScreen(graph: AppGraph) {
 }
 
 @Composable
-internal fun ServiceCard(server: CatalogServer, selection: McpSelection, status: ServerStatus?, onChange: (McpSelection) -> Unit) {
+internal fun ServiceCard(
+    server: CatalogServer,
+    selection: McpSelection,
+    status: ServerStatus?,
+    onChange: (McpSelection) -> Unit,
+    onTest: (suspend () -> Pair<List<ServerStatus>, List<String>>)? = null,
+) {
     val enabled = server.id in selection.enabled
     val uri = LocalUriHandler.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var testing by remember(server.id) { mutableStateOf(false) }
+    var testResult by remember(server.id) { mutableStateOf<ServerStatus?>(null) }
+    var testProblem by remember(server.id) { mutableStateOf<String?>(null) }
+    // Key 一改，上一次的测试结论就不再作数，直接清掉，避免「缺 Key」的旧提示一直挂着。
+    val keySignature = server.keys.joinToString("|") { selection.keys[it.name].orEmpty() }
+    LaunchedEffect(keySignature) {
+        testProblem = null
+        testResult = null
+    }
     SectionCard {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             MonogramTile(server.title, size = 40.dp)
@@ -237,6 +265,55 @@ internal fun ServiceCard(server: CatalogServer, selection: McpSelection, status:
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+            if (onTest != null) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    OutlinedButton(
+                        enabled = !testing,
+                        onClick = {
+                            // 缺 Key 时直接提示，不去发请求。
+                            if (missing.isNotEmpty()) {
+                                testResult = null
+                                testProblem = context.getString(R.string.mcp_test_need_key, missing.joinToString("、"))
+                                return@OutlinedButton
+                            }
+                            testProblem = null
+                            testResult = null
+                            testing = true
+                            scope.launch {
+                                try {
+                                    val (statuses, warnings) = onTest()
+                                    testResult = statuses.firstOrNull()
+                                    if (statuses.isEmpty()) {
+                                        testProblem = warnings.joinToString("；")
+                                            .ifBlank { context.getString(R.string.mcp_test_nothing) }
+                                    }
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Throwable) {
+                                    testProblem = context.getString(
+                                        R.string.mcp_test_failed,
+                                        (e.message ?: e.javaClass.simpleName).take(160),
+                                    )
+                                } finally {
+                                    testing = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.height(36.dp),
+                    ) {
+                        Icon(Icons.Outlined.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(
+                            stringResource(if (testing) R.string.mcp_testing else R.string.mcp_test_this),
+                            modifier = Modifier.padding(start = 6.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+                testProblem?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                testResult?.let { StatusLine(it) }
             }
         }
         status?.let { StatusLine(it) }
@@ -323,13 +400,31 @@ private fun CustomServers(selection: McpSelection, status: Map<String, ServerSta
         modifier = Modifier.fillMaxWidth(),
     )
     Text(stringResource(R.string.mcp_custom_confirm), style = MaterialTheme.typography.bodyMedium)
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    // 三选一改成一列单选：横向三个胶囊在窄屏会被挤到换行。
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         listOf(
             ConfirmPolicy.WRITES to R.string.mcp_confirm_writes,
             ConfirmPolicy.ALL to R.string.mcp_confirm_all,
             ConfirmPolicy.NONE to R.string.mcp_confirm_none,
         ).forEach { (policy, label) ->
-            FilterChip(selected = confirm == policy, onClick = { confirm = policy }, label = { Text(stringResource(label)) })
+            Row(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .selectable(
+                        selected = confirm == policy,
+                        role = Role.RadioButton,
+                        onClick = { confirm = policy },
+                    )
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = confirm == policy, onClick = null)
+                Text(
+                    stringResource(label),
+                    modifier = Modifier.padding(start = 6.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
     AssistChip(

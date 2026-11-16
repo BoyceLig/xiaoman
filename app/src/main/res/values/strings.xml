@@ -121,6 +121,8 @@
     <string name="mcp_testing">正在连接…</string>
     <string name="mcp_test_nothing">没有可测试的服务：填好 Key，或把地址改成 https 后再试</string>
     <string name="mcp_test_failed">测试失败：%1$s</string>
+    <string name="mcp_test_this">测试</string>
+    <string name="mcp_test_need_key">请先填入 %1$s 再测试</string>
     <string name="mcp_test_skipped">以下服务没有测试</string>
     <string name="mcp_official">官方</string>
     <string name="mcp_community">社区</string>
